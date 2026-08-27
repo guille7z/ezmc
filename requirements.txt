@@ -1,0 +1,4 @@
+requests
+pyfiglet
+textual>=8
+loguru
