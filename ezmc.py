@@ -95,8 +95,11 @@ class CreateServerMenu(App):
             )
 
             with Horizontal():
-                yield Button("Cancel", variant="error")
-                yield Button("Create", variant="success")
+                yield Button("Cancel", id="cancel", variant="error")
+                yield Button("Create", id="create-server-btn", variant="success")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.exit(event.button.id)
 
 class ServerList(App):
     CSS = """
@@ -118,6 +121,9 @@ class ServerList(App):
             Option(" Cancel", id="cancel"),
         )
 
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.exit(event.option.id)
+
 class ManageServer(App):
     CSS = """
         Screen {
@@ -133,12 +139,15 @@ class ManageServer(App):
 
     def compose(self) -> ComposeResult:
         yield OptionList(
-            " Start server",        # TODO: id=server-start
-            " Server properties",   # TODO: id=server-properties
-            " Delete world",        # TODO: id=world-delete
-            " Delete server",       # TODO: id=server-delete
-            " Cancel",              # TODO: id=cancel
+            Option(" Start server", id="server-start"),
+            Option(" Server properties", id="server-properties"),
+            Option(" Delete world", id="world-delete"),
+            Option(" Delete server", id="server-delete"),
+            Option(" Cancel", id="cancel"),
         )
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.exit(event.option.id)
 
 class ServerPropertiesList(App):
     CSS = """
@@ -163,8 +172,8 @@ if __name__ == "__main__":
 
     if result == "create-server":
         result = CreateServerMenu().run()
-        if result == "cancel":
-            print("111")
+        if result == "create-server-btn":
+            print("TODO: create server")
     elif result == "manage-server":
         ServerList().run() # TODO: make into popup -> select server => THEN go into server management
     elif result == "exit":
