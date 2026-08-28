@@ -2,6 +2,13 @@
 
 An easy to use TUI made in Python to create and manage Minecraft servers!
 
+## Navigation
+
+- **Arrow keys**: move the selection up/down in a menu.
+- **Enter**: ...select!
+- **Esc**: back out of a confirm prompt.
+- **Ctrl+Q**: go back to the previous screen, or if in the menu, quit.
+
 ## Running
 
 ```sh
