@@ -189,7 +189,6 @@ class ServerProperties(App[None]):
     def compose(self) -> ComposeResult:
         yield ActionList(
             *self._property_options(),
-            Option(" Cancel", "cancel"),
         )
 
     def _property_options(self):
