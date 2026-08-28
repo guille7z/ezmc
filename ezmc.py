@@ -1,12 +1,15 @@
 from pathlib import Path
 import requests
 import shutil
+import subprocess
 from loguru import logger
 from pyfiglet import Figlet
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
 from textual.widgets import Button, Input, Label, OptionList, Select
 from textual.widgets.option_list import Option
+
+# i <3 TODO's
 
 class MainMenu(App):
     CSS = """
@@ -30,6 +33,14 @@ class MainMenu(App):
 
     def compose(self) -> ComposeResult:
         yield Label(Figlet(font="slant").renderText("ezmc"))
+        last_git_commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=".",
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        yield Label(last_git_commit, id="commit-version")
         yield OptionList(
             Option("Create a Server", id="create-server"),
             Option("Manage a Server", id="manage-server"),
@@ -69,8 +80,8 @@ class CreateServerMenu(App):
             yield Label("What modloader (if any) would you like?")
             yield Select(
                 [
-                    ("No modloader", "nope"),
-                    ("NeoForge", "neoforge"),       # TODO: https://maven.neoforged.net/releases/net/neoforged/neoforge/{version}/neoforge-{version}-installer.jar
+                    ("No modloader", "vanilla"),
+                    ("NeoForge", "neoforge"),
                     ("Forge", "forge"),             # TODO: https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json
                     ("Fabric", "fabric"),           # TODO: https://meta.fabricmc.net/v2/versions/loader/1.21.1
                     ("Quilt", "quilt"),             # TODO: https://meta.quiltmc.org/v3/versions/loader
@@ -140,11 +151,11 @@ class ManageServer(App):
 
     def compose(self) -> ComposeResult:
         yield OptionList(
-            Option(" Start server", id="server-start"),
-            Option(" Server properties", id="server-properties"),
-            Option(" Delete world", id="world-delete"),
-            Option(" Delete server", id="server-delete"),
-            Option(" Cancel", id="cancel"),
+            Option(" Start server", id="server-start"), # TODO
+            Option(" Server properties", id="server-properties"), # TODO
+            Option(" Delete world", id="world-delete"), # TODO
+            Option(" Delete server", id="server-delete"), # TODO
+            Option(" Cancel", id="cancel"), # TODO
         )
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -164,13 +175,17 @@ class ServerPropertiesList(App):
     """
 
     def compose(self) -> ComposeResult:
+        server_properties_path = f"servers/{self.server}/server.properties"
+
+        # TODO: get all server properties as lines
+
         yield OptionList(
-            # TODO
+            # TODO: list each server property as an option
         )
 
 def download_server(loader: str, version: str):
     if loader:
-        if loader == "nope":
+        if loader == "vanilla":
             manifest = requests.get(
                 "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
             ).json()
@@ -211,9 +226,7 @@ if __name__ == "__main__":
     result = MainMenu().run()
 
     if result == "create-server":
-        result = CreateServerMenu().run()
-        if result == "create-server-btn":
-            print("TODO: create server")
+        result = CreateServerMenu().run() # TODO: actually make it create server: download jar -> eula modal (eula=true) => start server
     elif result == "manage-server":
         ServerList().run() # TODO: make into popup -> select server => THEN go into server management
     elif result == "exit":
