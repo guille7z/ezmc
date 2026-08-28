@@ -1,117 +1,38 @@
-import os
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 import requests
+from loguru import logger
 from pyfiglet import Figlet
 from textual.app import App, ComposeResult
-from textual.widgets import OptionList, Input, Select, Button, Label
+from textual.containers import Container, Horizontal
+from textual.widgets import Button, Input, Label, OptionList, Select
 from textual.widgets.option_list import Option
-from textual.containers import Container
-from textual.strip import Strip
-from textual.style import Style
-from textual.color import Color
-from textual.screen import ModalScreen
-from textual.binding import Binding
-from textual import events
-from loguru import logger
 
-class ActionList(OptionList):
-    CANCELLABLE = {"cancel", "exit", "delete", "delete-world", "reset-world"}
-
-    DEFAULT_CSS = "ActionList.cancellable-focused { border: tall red; }"
-
-    def watch_highlighted(self, highlighted: int | None) -> None:
-        super().watch_highlighted(highlighted)
-        cancellable = (
-            highlighted is not None
-            and highlighted < len(self._options)
-            and self._options[highlighted].id in self.CANCELLABLE
-        )
-        self.set_class(cancellable, "cancellable-focused")
-
-    def render_line(self, y: int) -> Strip:
-        line_number = self.scroll_offset.y + y
-        try:
-            option_index, line_offset = self._lines[line_number]
-            option = self.options[option_index]
-        except IndexError:
-            return Strip.blank(
-                self.scrollable_content_region.width,
-                self.get_visual_style("option-list--option").rich_style,
-            )
-
-        mouse_over = self._mouse_hovering_over == option_index
-        component_class = ""
-        if option.disabled:
-            component_class = "option-list--option-disabled"
-        elif self.highlighted == option_index:
-            component_class = "option-list--option-highlighted"
-        elif mouse_over:
-            component_class = "option-list--option-hover"
-
-        if component_class:
-            style = self.get_visual_style("option-list--option", component_class)
-        else:
-            style = self.get_visual_style("option-list--option")
-
-        if self.highlighted == option_index and option.id in self.CANCELLABLE:
-            style = style + Style(background=Color(255, 0, 0), foreground=Color(255, 255, 255))
-
-        strips = self._get_option_render(option, style)
-        try:
-            strip = strips[line_offset]
-        except IndexError:
-            return Strip.blank(
-                self.scrollable_content_region.width,
-                self.get_visual_style("option-list--option").rich_style,
-            )
-        return strip
-
-class InitialServerAction(App[None]):
+class MainMenu(App):
     CSS = """
-    Screen { align: center middle; }
+        Screen {
+            align: center middle;
+        }
 
-    OptionList {
-        width: 70%;
-        height: auto;
-        text-align: center;
-    }
+        Label {
+            width: auto;
+            height: auto;
+            content-align: center middle;
+        }
 
-    Label {
-        width: 70%;
-        text-align: center;
-    }
+        OptionList {
+            width: auto;
+            min-width: 30;
+            align-horizontal: center;
+            text-align: center;
+        }
     """
 
     def compose(self) -> ComposeResult:
-        yield Label(f.renderText("ezmc"))
-        yield ActionList(
-            Option("Create a Server", "create"),
-            Option("Manage a Server", "manage"),
-            Option("Exit", "exit"),
-        )
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        self.exit(event.option.id)
-
-class ManageServerList(App[None]):
-    CSS = """
-    Screen { align: center middle; }
-
-    OptionList {
-        width: 50%;
-        height: auto;
-    }
-    """
-
-    def compose(self) -> ComposeResult:
-        servers = [p for p in Path("servers").iterdir() if p.is_dir()]
-
-        yield ActionList(
-            *(Option(f" {s.name}", s.name) for s in servers),
-            Option(" Cancel", "cancel"),
+        yield Label(Figlet(font="slant").renderText("ezmc"))
+        yield OptionList(
+            Option("Create a Server", id="create-server"),
+            Option("Manage a Server", id="manage-server"),
+            Option("Exit", id="exit"),
         )
 
     def on_option_list_option_selected(
@@ -119,365 +40,132 @@ class ManageServerList(App[None]):
     ) -> None:
         self.exit(event.option.id)
 
-class ManageServer(App[None]):
+class CreateServerMenu(App):
     CSS = """
-    Screen { align: center middle; }
+        Screen {
+            align: center middle;
+            padding: 2 4;
+            height: auto;
+        }
 
-    OptionList {
-        width: 50%;
-        height: auto;
-        /*text-align: center;*/
-    }
-    """
+        Horizontal {
+            width: 100%;
+            height: auto;
+            align: center middle;
+        }
 
-    def __init__(self, server: str) -> None:
-        super().__init__()
-        self.selected_server = server
-        self._confirming = None
-
-    def compose(self) -> ComposeResult:
-        yield ActionList(
-            Option(" Start server", "start-server"), # TODO: if server is started (somehow detect that) => say stop server and stop server instead :p
-            Option(" Server properties", "server-properties"), # TODO
-            #Option("Restart world", "reset-world"), # TODO
-            Option(" Delete world", "delete-world"),
-            Option(" Delete server", "delete"),
-            Option(" Cancel", "cancel"),
-        )
-
-    def _reset_confirm(self) -> None:
-        if self._confirming is not None:
-            self.query_one(ActionList).replace_option_prompt(
-                self._confirming, self._original_prompt
-            )
-            self._confirming = None
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option.id == self._confirming:
-            self.exit(event.option.id)
-            return
-        self._reset_confirm()
-        if event.option.id in ("delete", "delete-world"):
-            self._confirming = event.option.id
-            self._original_prompt = self.query_one(ActionList).get_option(event.option.id).prompt
-            self.query_one(ActionList).replace_option_prompt(event.option.id, " You sure?")
-            return
-        self.exit(event.option.id)
-
-    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
-        self._reset_confirm()
-
-    def on_key(self, event: events.Key) -> None:
-        if event.key == "escape" and self._confirming is not None:
-            self._reset_confirm()
-            event.stop()
-
-class ServerProperties(App[None]):
-    CSS = """
-    Screen { align: center middle; }
-
-    OptionList {
-        width: auto;
-        height: 50%;
-    }
-    """
-
-    def __init__(self, server: str) -> None:
-        super().__init__()
-        self.server = server
-
-    def compose(self) -> ComposeResult:
-        yield ActionList(
-            *self._property_options(),
-        )
-
-    def _property_options(self):
-        options_file = Path("servers") / self.server / "server.properties"
-        lines = options_file.read_text().splitlines()
-
-        options = []
-        for line in lines:
-            if line.startswith("#") or not line.strip():
-                continue
-
-            options.append(Option(f" {line}", line))
-
-        return options
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option.id == "cancel":
-            self.exit("cancel")
-            return
-        key, _, value = event.option.id.partition("=")
-        self._pending = event.option.id
-        self.push_screen(PropertyInput(key, value.strip() or None), self.on_property_submitted)
-
-    def on_property_submitted(self, new_value: str | None) -> None:
-        if new_value is None:
-            return
-        path = Path("servers") / self.server / "server.properties"
-        lines = path.read_text().splitlines()
-        key = self._pending.partition("=")[0]
-        for i, line in enumerate(lines):
-            if line.startswith("#"):
-                continue
-            if line.partition("=")[0] == key:
-                lines[i] = f"{key}={new_value}"
-                break
-        path.write_text("\n".join(lines) + "\n")
-        self.query_one(ActionList).clear_options()
-        self.query_one(ActionList).add_options(self._property_options())
-
-class PropertyInput(ModalScreen[str]):
-    BINDINGS = [
-        Binding("escape", "dismiss", "Cancel", show=False),
-    ]
-    CSS = """
-    PropertyInput {
-        align: center middle;
-    }
-
-    #box {
-        align: center middle;
-        height: auto;
-        width: 60%;
-        border: thick $border;
-        padding: 1 2;
-        background: $surface;
-    }
-
-    #box > * {
-        margin-bottom: 1;
-    }
-    """
-
-    def __init__(self, key: str, value: str | None) -> None:
-        super().__init__()
-        self.key = key
-        self.value = value
-
-    def compose(self) -> ComposeResult:
-        with Container(id="box"):
-            yield Label(self.key)
-            yield Input(value=self.value or "", placeholder=self.value or "", id="value")
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.dismiss(self.query_one("#value", Input).value)
-
-class EULADisclaimer(ModalScreen[bool]):
-    CSS = """
-    EULADisclaimer {
-        align: center middle;
-        text-align: center;
-    }
-
-    #box {
-        align: center middle;
-        height: 32%;
-        width: 50%;
-        border: thick $border;
-        padding: 1 2;
-    }
-
-    #box > * {
-        margin-bottom: 1;
-    }
+        Button {
+            margin: 1 1;
+        }
     """
 
     def compose(self) -> ComposeResult:
-        with Container(id="box"):
-            yield Label("just accept the eula...")
-            yield Button("OK!", id="yes", variant="success")
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "yes")
-
-class CreateServer(App):
-    CSS = """
-    Screen { align: center middle; }
-
-    #server-setup {
-        width: 50;
-        height: auto;
-        /* border: solid green; */
-        padding: 1 2;
-    }
-
-    Button {
-        width: 100%;
-    }
-    """
-
-    def compose(self) -> ComposeResult:
-        with Container(id="server-setup"):
-            yield Label("Server name:")
-            yield Input(placeholder="Lowvoxel", id="server-name")
-
+        manifest = requests.get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json", timeout=10).json()
+        yield Label(Figlet(font="standard").renderText("server setup"))
+        with Container():
+            yield Label("What will your server be called?", id="server-name-label")
+            yield Input("", id="server-name")
             yield Label("What modloader (if any) would you like?")
             yield Select(
                 [
                     ("No modloader", "nope"),
-                    ("NeoForge", "neoforge"),
-                    ("Forge", "forge"),
-                    ("Fabric", "fabric"),
-                    ("Quilt", "quilt"),
-                    ("LiteLoader", "liteloader"),
+                    ("NeoForge", "neoforge"),       # TODO: https://maven.neoforged.net/releases/net/neoforged/neoforge/{version}/neoforge-{version}-installer.jar
+                    ("Forge", "forge"),             # TODO: https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json
+                    ("Fabric", "fabric"),           # TODO: https://meta.fabricmc.net/v2/versions/loader/1.21.1
+                    ("Quilt", "quilt"),             # TODO: https://meta.quiltmc.org/v3/versions/loader
+                    #("LiteLoader", "liteloader"),
                 ],
                 id="loader-dropdown",
                 allow_blank=False,
             )
-            yield Label("Game version")
+
+            versions = [
+                (version["id"], version["id"])
+                for version in manifest["versions"]
+                if version["type"] == "release"
+            ]
+
+            #latest = versions[0][1]
+            latest = manifest["latest"]["release"]
+
+            yield Label("Select a Minecraft version:")
             yield Select(
-                fetch_versions(),
-                id="version-dropdown",
-                allow_blank=False,
+                versions, value=latest,
+                id="server-version"
             )
 
-            yield Label("", id="error")
-            yield Button("Create", variant="success", id="btn-done")
+            with Horizontal():
+                yield Button("Cancel", variant="error")
+                yield Button("Create", variant="success")
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-cancel":
-            self.exit(None)
-            return
-        if event.button.id != "btn-done":
-            return
-        server_name = self.query_one("#server-name", Input).value.strip()
-        error = self.query_one("#error", Label)
-        if not server_name:
-            error.update("Server name cannot be empty.")
-            return
-        mod_loader = self.query_one("#loader-dropdown", Select).value
-        if mod_loader == Select.NULL:
-            error.update("Select a modloader.")
-            return
-        game_version = self.query_one("#version-dropdown", Select).value
-        if game_version == Select.NULL:
-            error.update("Select a game version.")
-            return
-        error.update("")
-        self.config = {"server_name": server_name, "mod_loader": mod_loader, "version": game_version}
-        self.push_screen(EULADisclaimer(), self.on_disclaimer)
+class ServerList(App):
+    CSS = """
+        Screen {
+            align: center middle;
+        }
 
-    def on_disclaimer(self, accepted: bool) -> None:
-        if not accepted:
-            self.exit(None)
-            return
-        self.exit(result=self.config)
+        OptionList {
+            width: auto;
+            min-width: 30;
+            align-horizontal: center;
+        }
+    """
 
-def fetch_versions() -> list[tuple[str, str]]:
-    manifest = requests.get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json").json()
-    releases = [v["id"] for v in manifest["versions"] if v["type"] == "release"]
-    return [(v, v) for v in releases]
+    def compose(self) -> ComposeResult:
+        servers = [ p for p in Path("servers").iterdir() ]
+        yield OptionList(
+            *(Option(f" {s.name}", s.name) for s in servers),
+            Option(" Cancel", id="cancel"),
+        )
 
-def server_jar_url(version: str) -> str:
-    manifest = requests.get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json").json()
-    entry = next(v for v in manifest["versions"] if v["id"] == version)
-    return requests.get(entry["url"]).json()["downloads"]["server"]["url"]
+class ManageServer(App):
+    CSS = """
+        Screen {
+            align: center middle;
+        }
 
-def download_server_jar(version: str, loader: str, dest: Path) -> None:
-    if loader == "nope":
-        url = server_jar_url(version)
-        logger.info(f"Downloading server.jar ({version}) from {url}...")
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
-            with open(dest, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        logger.success(f"Saved server.jar to {dest}")
-        subprocess.run(["java", "-Xmx4G", "-Xms4G", "-jar", dest.name, "nogui"], cwd=dest.parent)
-        eula = dest.parent / "eula.txt"
-        if eula.exists():
-            eula.write_text(eula.read_text().replace("eula=false", "eula=true"))
-            logger.success("Accepted EULA (eula=true).")
-    else:
-        # TODO: per-loader installers (forge/neoforge/fabric/quilt/liteloader)
-        logger.info(f"Downloading the '{loader}' server.jar is not implemented yet.")
+        OptionList {
+            width: auto;
+            min-width: 30;
+            align-horizontal: center;
+        }
+    """
 
-def create_server():
-    return CreateServer().run()
+    def compose(self) -> ComposeResult:
+        yield OptionList(
+            " Start server",        # TODO: id=server-start
+            " Server properties",   # TODO: id=server-properties
+            " Delete world",        # TODO: id=world-delete
+            " Delete server",       # TODO: id=server-delete
+            " Cancel",              # TODO: id=cancel
+        )
 
-f = Figlet(font='slant')
+class ServerPropertiesList(App):
+    CSS = """
+        Screen {
+            align: center middle;
+        }
 
-def create_server_flow() -> None:
-    while True:
-        config = create_server()
-        if config is None:
-            return
-        logger.info(f"Server '{config['server_name']}' configured with modloader '{config['mod_loader']}' on version {config['version']}")
-        server_dir = Path("servers") / config["server_name"]
-        try:
-            server_dir.mkdir(parents=True)
-            logger.success(f"Directory '{server_dir}' created successfully.")
-        except FileExistsError:
-            logger.error(f"Directory '{server_dir}' already exists.")
-        except PermissionError:
-            logger.error(f"Permission denied: Unable to create '{server_dir}'.")
-        except Exception as e:
-            logger.error(f"An error occurred: {e}")
+        OptionList {
+            width: auto;
+            min-width: 30;
+            align-horizontal: center;
+        }
+    """
 
-        loader = config["mod_loader"]
-        if loader == "nope":
-            logger.info("No modloader selected; installing vanilla server.")
-        elif loader == "neoforge":
-            logger.info("Setting up NeoForge server.")
-        elif loader == "forge":
-            logger.info("Setting up Forge server.")
-        elif loader == "fabric":
-            logger.info("Setting up Fabric server.")
-        elif loader == "quilt":
-            logger.info("Setting up Quilt server.")
-        elif loader == "liteloader":
-            logger.info("Setting up LiteLoader server.")
-        else:
-            logger.error(f"Unknown modloader '{loader}'.")
-            return
-        download_server_jar(config["version"], loader, server_dir / "server.jar")
-        return
-
-def manage_server_flow() -> None:
-    while True:
-        selected = ManageServerList().run()
-        if selected is None or selected == "cancel":
-            return
-        action = ManageServer(selected).run()
-        if action == "cancel":
-            continue
-        elif action == "delete":
-            shutil.rmtree(f"servers/{selected}")
-            logger.success(f"Deleted server '{selected}'.")
-            continue
-        elif action == "delete-world":
-            shutil.rmtree(f"servers/{selected}/world")
-            logger.success(f"Deleted world folder of server '{selected}'.")
-            continue
-        elif action == "start-server":
-            server_dir = Path("servers") / selected
-            subprocess.run(["java", "-Xmx4G", "-Xms4G", "-jar", "server.jar", "nogui"], cwd=server_dir)
-            continue
-        elif action == "server-properties":
-            ServerProperties(selected).run()
-            continue
-        else:
-            logger.info(f"TODO: '{action}' on '{selected}'")
+    def compose(self) -> ComposeResult:
+        yield OptionList(
+            # TODO
+        )
 
 if __name__ == "__main__":
-    logger.info(f"system is running {sys.platform}") # win32 | linux | darwin
+    result = MainMenu().run()
 
-    if os.path.isdir('servers'):
-        logger.info("servers/ directory exists! :D")
-    else:
-        logger.warning("servers/ directory not found. Creating...")
-        Path("servers").mkdir(parents=True, exist_ok=True)
-        logger.success("created servers directory!")
-
-    while True:
-        action = InitialServerAction().run()
-        if action is None or action == "exit":
-            break
-        if action == "create":
-            create_server_flow()
-        elif action == "manage":
-            manage_server_flow()
-        else:
-            logger.error(f"{action} is an invalid option")
+    if result == "create-server":
+        result = CreateServerMenu().run()
+        if result == "cancel":
+            print("111")
+    elif result == "manage-server":
+        ServerList().run() # TODO: make into popup -> select server => THEN go into server management
+    elif result == "exit":
+        print("\nbye :(")
