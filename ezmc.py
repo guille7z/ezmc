@@ -29,6 +29,10 @@ class MainMenu(App):
             align-horizontal: center;
             text-align: center;
         }
+
+        #commit-version {
+            padding: 1 7;
+        }
     """
 
     def compose(self) -> ComposeResult:
@@ -39,13 +43,13 @@ class MainMenu(App):
             capture_output=True,
             text=True,
             check=True,
-        ).stdout.strip()
-        yield Label(last_git_commit, id="commit-version")
+        ).stdout.strip()    # TODO: find alternative to subprocess.run
         yield OptionList(
             Option("Create a Server", id="create-server"),
             Option("Manage a Server", id="manage-server"),
             Option("Exit", id="exit"),
         )
+        yield Label(f"Commit: {last_git_commit}", id="commit-version")
 
     def on_option_list_option_selected(
         self, event: OptionList.OptionSelected
@@ -112,6 +116,8 @@ class CreateServerMenu(App):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.exit(event.button.id)
+
+# TODO: EULA Disclaimer "By clicking the button below, you are indicating your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA)."
 
 class ServerList(App):
     CSS = """
