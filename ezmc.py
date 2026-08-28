@@ -1,5 +1,6 @@
 from pathlib import Path
 import requests
+import shutil
 from loguru import logger
 from pyfiglet import Figlet
 from textual.app import App, ComposeResult
@@ -166,6 +167,45 @@ class ServerPropertiesList(App):
         yield OptionList(
             # TODO
         )
+
+def download_server(loader: str, version: str):
+    if loader:
+        if loader == "nope":
+            manifest = requests.get(
+                "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+            ).json()
+
+            version_data = next(
+                v for v in manifest["versions"]
+                if v["id"] == version
+            )
+
+            data = requests.get(version_data["url"]).json()
+
+            server_url = data["downloads"]["server"]["url"]
+
+            with requests.get(server_url, stream=True) as response:
+                response.raise_for_status()
+
+                with open("server.jar", "wb") as file:
+                    for chunk in response.iter_content(8192):
+                        file.write(chunk)
+        elif loader == "neoforge":
+            built_link = f"https://maven.neoforged.net/releases/net/neoforged/neoforge/{version}/neoforge-{version}-installer.jar"
+            shutil.copyfileobj(
+                requests.get(
+                    built_link,
+                    stream=True).raw,
+                open(
+                    f"neoforge-{version}-installer.jar",
+                    "wb"
+                ))
+        elif loader == "forge": # TODO
+            print("TODO: quilt")
+        elif loader == "fabric": # TODO
+            print("TODO: fabric") # https://meta.fabricmc.net/v2/versions/loader/{version}/{loader_version}/{installer_version}/server/jar
+        elif loader == "quilt": # TODO
+            print("TODO: quilt") # no clue
 
 if __name__ == "__main__":
     result = MainMenu().run()
